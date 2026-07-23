@@ -133,14 +133,14 @@ Ten cases, each targeting a specific trap in the data dictionary rather than a h
 | ID | Tests | Result |
 |---|---|---|
 | eval_01 | `placement = 0` is "not reported", not "worst" | ✅ |
-| eval_02 | Refusal - course absent from dataset | ✅ |
+| eval_02 | Refusal - course absent from dataset | ❌ (was failing)|
 | eval_03 | Semester → annual fee conversion | ✅ |
 | eval_04 | Diploma is not a degree (C005 exclusion) | ✅ |
 | eval_05 | Similar-name disambiguation (C002 vs C014) | ✅ |
 | eval_06 | Cutoff as a hard floor, no hedging | ✅ |
 | eval_07 | Costs beyond tuition, from the `about` field | ✅ |
 | eval_08 | Negated constraint - government *without* hostel | ✅ (was failing) |
-| eval_09 | Field absent from schema | ❌ *(test corrected - see below)* |
+| eval_09 | Field absent from schema | ✅ *(test corrected - see below)* |
 | eval_10 | Total-course-cost → per-year conversion | ✅ |
 
 **eval_08 was a genuine retrieval bug.** The query *"government colleges without hostel facilities"* returned C007 and C012 - the colleges that *do* have hostels - and the system reported that none lacked one. False, and confidently so. Fixed by negation detection; now correctly returns C005 and C011.
