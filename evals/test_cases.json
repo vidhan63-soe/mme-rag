@@ -1,0 +1,113 @@
+[
+    {
+        "id": "eval_01",
+        "name": "Placement zero semantics",
+        "query": "Which college has the worst placement record?",
+        "expected_behavior": "Must NOT rank C006 (Nainital Medical) as worst. Should note that C006 reports 0 because placement is not applicable for medical graduates, not because outcomes are poor.",
+        "check_type": "must_not_cite_as_worst",
+        "forbidden_in_answer": ["worst placement"],
+        "required_citations": [],
+        "expected_answered": true,
+        "notes": "Tests understanding of avg_placement_lpa=0 semantics from data dictionary."
+    },
+    {
+        "id": "eval_02",
+        "name": "Refusal — course not in data",
+        "query": "Which colleges offer a B.Sc in Agriculture?",
+        "expected_behavior": "Should clearly state that no college in the dataset offers B.Sc Agriculture. Must set answered=false.",
+        "check_type": "refusal",
+        "forbidden_in_answer": [],
+        "required_citations": [],
+        "expected_answered": false,
+        "notes": "Tests graceful refusal when data doesn't contain the answer."
+    },
+    {
+        "id": "eval_03",
+        "name": "Semester-to-year conversion",
+        "query": "I can afford ₹60,000 per semester. Which colleges fit my budget?",
+        "expected_behavior": "Must convert: ₹60,000/semester = ₹1,20,000/year. Should list colleges with annual_fees_inr <= 120000. Must show the conversion math explicitly.",
+        "check_type": "unit_conversion",
+        "forbidden_in_answer": [],
+        "required_citations": [],
+        "expected_answered": true,
+        "notes": "Tests the most critical product edge case: unit mismatch between student language and data."
+    },
+    {
+        "id": "eval_04",
+        "name": "Diploma vs degree distinction",
+        "query": "List all engineering degree colleges.",
+        "expected_behavior": "Should NOT include C005 (Shivalik Polytechnic) as a degree college — it offers diplomas only. May mention it with a caveat, but must not list it as offering engineering degrees.",
+        "check_type": "diploma_exclusion",
+        "forbidden_in_answer": [],
+        "required_citations": [],
+        "expected_answered": true,
+        "notes": "Tests diploma vs degree judgment call."
+    },
+    {
+        "id": "eval_05",
+        "name": "Similar name disambiguation",
+        "query": "What courses does Ganga Valley University offer?",
+        "expected_behavior": "Must return courses for C002 (Ganga Valley University, Haridwar): BBA, B.Com, BCA, MBA. Must NOT confuse with C014 (Ganga Institute of Commerce, Dehradun).",
+        "check_type": "correct_citation",
+        "forbidden_in_answer": [],
+        "required_citations": ["C002"],
+        "forbidden_citations": ["C014"],
+        "expected_answered": true,
+        "notes": "Tests retrieval disambiguation between similar names."
+    },
+    {
+        "id": "eval_06",
+        "name": "Cutoff as hard floor",
+        "query": "I scored 55% in 12th. Can I get into Ambedkar National Institute?",
+        "expected_behavior": "Must clearly state NO — the cutoff is 88% and 55% is below it. Must not suggest the student 'try anyway' or 'apply through management quota' without data support.",
+        "check_type": "hard_refusal",
+        "forbidden_in_answer": ["try", "chance", "possible"],
+        "required_citations": ["C012"],
+        "expected_answered": true,
+        "notes": "Tests hard floor enforcement on cutoff."
+    },
+    {
+        "id": "eval_07",
+        "name": "Hidden costs from about field",
+        "query": "What's the total cost of studying at Rishikesh Institute of Design?",
+        "expected_behavior": "Must mention the ₹2,10,000 annual tuition AND the additional studio/material/printing charges of ₹30,000-40,000/year mentioned in the about field. A response that only states ₹2,10,000 is incomplete.",
+        "check_type": "about_field_cost",
+        "forbidden_in_answer": [],
+        "required_citations": ["C008"],
+        "expected_answered": true,
+        "notes": "Tests whether the system reads the about field for cost information beyond tuition."
+    },
+    {
+        "id": "eval_08",
+        "name": "Cross-field question — hostel + government",
+        "query": "Are there any government colleges without hostel facilities?",
+        "expected_behavior": "Should identify C005 (Shivalik Government Polytechnic, no hostel) and C011 (Haldwani Law College, no hostel). C007 and C012 are government WITH hostel.",
+        "check_type": "correct_citation",
+        "forbidden_in_answer": [],
+        "required_citations": ["C005", "C011"],
+        "expected_answered": true,
+        "notes": "Tests multi-field structured filtering."
+    },
+    {
+        "id": "eval_09",
+        "name": "Refusal — field not in data",
+        "query": "What is the student-to-faculty ratio at Doon Business School?",
+        "expected_behavior": "There is no student-to-faculty ratio field in the data. Should say this is not available. May mention total_seats=180 and any faculty info from about field, but must not invent a ratio.",
+        "check_type": "refusal_or_partial",
+        "forbidden_in_answer": [],
+        "required_citations": ["C004"],
+        "expected_answered": true,
+        "notes": "Tests graceful handling of fields not in the dataset. Partial answer from about field is acceptable."
+    },
+    {
+        "id": "eval_10",
+        "name": "Lakh notation with no unit specified",
+        "query": "My total budget for a 4-year B.Tech is 5 lakhs. What are my options?",
+        "expected_behavior": "Must convert: ₹5,00,000 total / 4 years = ₹1,25,000/year max. Should filter colleges with annual_fees_inr <= 125000. Should find C005 (₹22K, but diploma only), C009 (₹1,18,000), C012 (₹45,000). Must handle the diploma caveat for C005.",
+        "check_type": "unit_conversion",
+        "forbidden_in_answer": [],
+        "required_citations": [],
+        "expected_answered": true,
+        "notes": "Tests total-course-cost to per-year conversion AND diploma judgment."
+    }
+]
