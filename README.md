@@ -108,6 +108,8 @@ The tri-state matters: `hostel_required` can be `True`, `False`, or absent, and 
 | LLM | Llama 3.3 70B via Groq | Free tier, sub-second typical latency, reliable JSON mode. |
 | Fallback | OpenAI `gpt-4o-mini` | Auto-selected if `OPENAI_API_KEY` is set instead. |
 
+I also ran the full suite against Llama 3.1 8B on the same Groq endpoint. It is roughly an order of magnitude cheaper and passes most cases, but it fails on precisely the kind of instruction this system depends on - it answered the published PhD question correctly in prose while setting `answered: true`, which is the flag the brief specifically asks to be right. The 70B model gets that case right. That is a concrete example of what the extra cost buys.
+
 ### Vector store: deliberately not used
 
 At 15 records, semantic search is one matrix multiply over a `(15, 384)` array - microseconds. ChromaDB or FAISS would add a dependency, a persistence layer, and an initialisation step to return the identical top-K. An ANN index solves a scan cost that does not exist at this scale.
@@ -133,21 +135,25 @@ Ten cases, each targeting a specific trap in the data dictionary rather than a h
 | ID | Tests | Result |
 |---|---|---|
 | eval_01 | `placement = 0` is "not reported", not "worst" | ✅ |
-| eval_02 | Refusal - course absent from dataset | ❌ (was failing)|
+| eval_02 | Refusal - course absent from dataset | ❌ *(see below)* |
 | eval_03 | Semester → annual fee conversion | ✅ |
 | eval_04 | Diploma is not a degree (C005 exclusion) | ✅ |
 | eval_05 | Similar-name disambiguation (C002 vs C014) | ✅ |
 | eval_06 | Cutoff as a hard floor, no hedging | ✅ |
 | eval_07 | Costs beyond tuition, from the `about` field | ✅ |
-| eval_08 | Negated constraint - government *without* hostel | ✅ (was failing) |
+| eval_08 | Negated constraint - government *without* hostel | ✅ *(was failing)* |
 | eval_09 | Field absent from schema | ✅ *(test corrected - see below)* |
 | eval_10 | Total-course-cost → per-year conversion | ✅ |
 
 **eval_08 was a genuine retrieval bug.** The query *"government colleges without hostel facilities"* returned C007 and C012 - the colleges that *do* have hostels - and the system reported that none lacked one. False, and confidently so. Fixed by negation detection; now correctly returns C005 and C011.
 
+**eval_02 is a real system failure and I have left it in.** Asked *"which colleges offer a B.Sc in Agriculture?"*, the system correctly answers that none do, and helpfully notes that C007 offers B.Sc in other science streams - then sets `answered: true`. The prose is right; the flag is wrong. The model appears to be answering "did I produce useful text?" rather than "was the student's question answered?".
+
+I tried two fixes. An explicit prompt rule (*"mentioning a nearby option does not make the question answered"*) reduced but did not eliminate it. A deterministic Python override was then added, scoped to relaxed retrieval with a course filter - but this query produces no course filter at all, because "Agriculture" is not a term the extractor knows, so retrieval never relaxes and the override never fires. Fixing it properly means either enumerating courses that are *not* in the data, which is unbounded, or validating the flag against the answer text. The latter is the right approach and is item 7 below.
+
 **eval_09 is a case where my test was wrong and the system was right.** I asked for a student-to-faculty ratio, which does not exist in the schema, and wrote the expectation as `answered: true` on the assumption that a partial answer from the `about` field would be acceptable. The system refused instead and set `answered: false`. That is the better judgment: a ratio is a specific numeric claim, and the `about` field offers only a rough faculty count for a different college. Answering partially would invite the student to infer a number that was never in the data. The test expectation has been corrected to match, and the reasoning is recorded here rather than quietly edited away.
 
-I have deliberately not pushed this to 10/10. A suite where everything passes is a suite that is too easy.
+The suite sits at 9/10 and I have not tuned it to pass. eval_02 is a real defect with a documented cause; a suite where everything passes is a suite that is too easy.
 
 ---
 
@@ -181,7 +187,7 @@ That experience is the direct reason this prototype does as much work as it can 
 ## Part C - Written Reflection
 
 **Keeping per-query cost low as usage grows.**
-Three levers, in order of impact. First, semantic caching - hash the query embedding and serve a cached answer when a sufficiently similar query was handled recently. College data changes slowly and student questions cluster hard around a few dozen patterns, so caching should absorb a large share of traffic before it reaches the model; this was also the lever that mattered most at BioGenex. Second, tiered routing: the query analyzer already classifies complexity, so simple lookups ("fees at X") can go to a small model while genuinely comparative questions get a larger one. Third, keep it to one LLM call per query wherever possible - multi-agent loops multiply cost and latency together, and most student questions do not need them.
+Three levers, in order of impact. First, semantic caching - hash the query embedding and serve a cached answer when a sufficiently similar query was handled recently. College data changes slowly and student questions cluster hard around a few dozen patterns, so caching should absorb a large share of traffic before it reaches the model; this was also the lever that mattered most at BioGenex. Second, tiered routing: the query analyzer already classifies complexity, so simple lookups ("fees at X") can go to a small model while genuinely comparative questions get a larger one - though see the model-choice note above on what the cheaper model actually costs you in accuracy. Third, keep it to one LLM call per query wherever possible - multi-agent loops multiply cost and latency together, and most student questions do not need them.
 
 **Never stating a wrong fee or cutoff.**
 The system must never *generate* a number, only copy one. This prototype takes the first step by removing arithmetic from the LLM's job: comparisons and rankings are computed in Python and injected as verdicts. The next step is a post-generation validator that extracts every ₹ amount and percentage from the response and blocks it unless each appears in the retrieved records. Structured fields should be injected as structured data rather than embedded prose, so there is no parsing layer between the database and the claim. Unit labels ("per year") should be enforced by the validator, not left to the model's discretion.
@@ -200,25 +206,25 @@ Measured across the 7 published questions via `run_all.py`. Reproduce with `pyth
 
 | Metric | Value |
 |---|---|
-| Average input tokens per query | 1,807 |
-| Average output tokens per query | 138 |
-| Average end-to-end latency per query | 5.62 s |
+| Average input tokens per query | 1,842 |
+| Average output tokens per query | 142 |
+| Average end-to-end latency per query | 6.72 s |
 | Model | Llama 3.3 70B (Groq) |
 | Cost per 1M input tokens | $0.59 |
 | Cost per 1M output tokens | $0.79 |
-| Total cost, 7 queries | $0.0082 |
-| **Cost per 1,000 queries** | **~$1.18 (≈ ₹98)** |
+| Total cost, 7 queries | $0.0084 |
+| **Cost per 1,000 queries** | **~$1.20 (≈ ₹102)** |
 | One-time embedding cost | ₹0 - local model, ~2 s for 15 colleges |
 
-The 5.62 s average is skewed by two outliers (15.5 s and 13.4 s) on the full-context questions; the median is closer to 0.9 s. Input tokens scale with how many colleges survive filtering - a targeted lookup runs around 1,000 tokens, a full-scan scholarship question around 4,255.
+The 6.72 s average is skewed by two outliers (15.5 s and 20.7 s) on the full-context questions; the median is closer to 0.6 s. Input tokens scale with how many colleges survive filtering - a targeted lookup runs around 1,000 tokens, a full-scan scholarship question around 4,288.
 
 ### At 50,000 queries/month, what breaks first?
 
-**Not cost.** ₹98 per 1,000 queries puts 50K/month at roughly ₹4,900 - negligible against the value of a counselling interaction.
+**Not cost.** ₹102 per 1,000 queries puts 50K/month at roughly ₹5,100 - negligible against the value of a counselling interaction.
 
-**Latency is the first real constraint,** and it bites before cost does. Groq's free tier capped this prototype at 100K tokens/day, which I hit during development. At ~1,800 input tokens per query, 50K queries is roughly 90M tokens a month - well past free-tier limits and into rate-limiting during peak hours, which in admissions means the weeks around results. First fix is semantic caching, which should cut model calls substantially given how tightly student questions cluster, plus routing simple lookups to a smaller model. Both reduce latency and cost at once.
+**Latency is the first real constraint,** and it bites before cost does. Groq's free tier capped this prototype at 100K tokens/day, which I hit during development. At ~1,840 input tokens per query, 50K queries is roughly 92M tokens a month - well past free-tier limits and into rate-limiting during peak hours, which in admissions means the weeks around results. First fix is semantic caching, which should cut model calls substantially given how tightly student questions cluster, plus routing simple lookups to a smaller model. Both reduce latency and cost at once.
 
-**Accuracy is the risk that actually matters.** At 50K queries students will find every edge case - negations the filter misses, courses absent from the data, Hindi and Hinglish phrasing, questions about hostel food and campus life that no structured field answers. The eval suite already caught one confident-wrong answer (eval_08) and one place where my own test was worse than the system's judgment (eval_09). Before optimising anything else I would expand that suite, add the numeric post-generation validator, and instrument the refusal rate in production as a live health signal.
+**Accuracy is the risk that actually matters.** At 50K queries students will find every edge case - negations the filter misses, courses absent from the data, Hindi and Hinglish phrasing, questions about hostel food and campus life that no structured field answers. The eval suite already caught one confident-wrong answer (eval_08), one open defect in refusal labelling (eval_02), and one place where my own test was worse than the system's judgment (eval_09). Before optimising anything else I would expand that suite, add the numeric post-generation validator, and instrument the refusal rate in production as a live health signal.
 
 ---
 
@@ -235,6 +241,8 @@ The 5.62 s average is skewed by two outliers (15.5 s and 13.4 s) on the full-con
 5. **SQLite for structured fields.** Replaces the pandas filter path with indexed SQL - faster, auditable, and the natural home for the structured half of the hybrid as the dataset grows.
 
 6. **MRR on the eval set,** to put a retrieval number alongside the generation pass rate.
+
+7. **Validate the `answered` flag against the answer text.** eval_02 shows the model can write a correct refusal and then mislabel it. A check that flags disagreement between refusal-shaped prose and `answered: true` would catch this class of bug generally, rather than patching each individual trigger.
 
 ---
 
