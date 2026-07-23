@@ -329,31 +329,51 @@ class HybridRetriever:
         return filters
 
     def _extract_budget(self, q: str) -> int | None:
-        """
-        Parse budget from query, handling:
-        - "₹1.5 lakh/year" → 150000
-        - "1 lakh per semester" → 200000 (×2 for annual)
-        - "₹50,000" → 50000
-        - "budget of 2 lakhs" → 200000
-        """
-        is_semester = "semester" in q or "sem" in q
+            """
+            Parse budget from query and normalise to ANNUAL rupees.
 
-        # Pattern: X lakh(s)
-        lakh_match = re.search(r'[₹rs.\s]*(\d+\.?\d*)\s*(?:lakh|lac|l)(?:s)?', q)
-        if lakh_match:
-            amount = float(lakh_match.group(1)) * 100000
-            if is_semester:
-                amount *= 2  # convert semester to annual
-            return int(amount)
+            Students state budgets in three incompatible units:
+            - "₹1.5 lakh/year"                    → 150000  (already annual)
+            - "1 lakh per semester"               → 200000  (×2)
+            - "my total budget for a 4-year
+            B.Tech is 5 lakhs"                 → 125000  (÷4)
 
-        # Pattern: ₹X,XX,XXX or Rs X,XX,XXX
-        rupee_match = re.search(r'[₹rs.\s]*(\d[\d,]*\d)', q)
-        if rupee_match:
-            amount_str = rupee_match.group(1).replace(",", "")
-            if amount_str.isdigit():
-                amount = int(amount_str)
+            Our data is per academic year, so everything converts to that.
+
+            The total-course-cost division requires a possessive signal, so that
+            "what's the total cost of studying at X?" — a question about a
+            college's fees, not a statement of the student's budget — is not
+            silently divided by the course duration.
+            """
+            is_semester = "semester" in q or "sem " in q
+
+            total_words = ["total budget", "total cost", "overall budget",
+                        "entire course", "full course", "whole course", "total fee"]
+            possessive_signals = ["my ", "i have", "i can", "i've got", "budget of",
+                                "afford", "for me"]
+            is_total = (any(w in q for w in total_words)
+                        and any(w in q for w in possessive_signals))
+
+            years_match = re.search(r'(\d+)\s*[-\s]?year', q)
+            course_years = int(years_match.group(1)) if years_match else 4
+
+            def normalise(amount: float) -> int:
                 if is_semester:
-                    amount *= 2
-                return amount
+                    return int(amount * 2)
+                if is_total:
+                    return int(amount / course_years)
+                return int(amount)
 
-        return None
+            # Pattern: X lakh(s)
+            lakh_match = re.search(r'[₹rs.\s]*(\d+\.?\d*)\s*(?:lakh|lac|l)(?:s)?', q)
+            if lakh_match:
+                return normalise(float(lakh_match.group(1)) * 100000)
+
+            # Pattern: ₹X,XX,XXX or Rs X,XX,XXX
+            rupee_match = re.search(r'[₹rs.\s]*(\d[\d,]*\d)', q)
+            if rupee_match:
+                amount_str = rupee_match.group(1).replace(",", "")
+                if amount_str.isdigit():
+                    return normalise(int(amount_str))
+
+            return None

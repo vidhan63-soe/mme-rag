@@ -12,6 +12,18 @@ enough to matter — we observed "₹8.4 LPA < ₹7.1 LPA" and "₹1,32,000 is
 above ₹1,50,000" in early runs. In admissions, a wrong fee destroys trust.
 So every numeric comparison and ordering is computed in Python and handed
 to the LLM as a finished verdict. The LLM writes prose; it never does math.
+
+The same principle extends past arithmetic to the `answered` flag. Asked
+about a course no college offers, the model writes a correct refusal and
+then sets answered=true anyway, because it produced text it considers
+useful. But the flag describes whether the STUDENT'S QUESTION was answered,
+not whether the response was helpful — so that decision is also made in
+Python rather than left to instruction-following.
+
+These verdicts and rankings are injected on EVERY applicable query, including
+when retrieval had to be relaxed. Suppressing them during relaxation was tried
+and immediately regressed three eval cases — the scaffolding is what keeps the
+model correct, and it is needed most when the retrieved set is imperfect.
 """
 
 from .retriever import HybridRetriever
@@ -46,24 +58,38 @@ class RAGPipeline:
 
         # --- Over-constrained retrieval ---
         # No college satisfied every constraint, so the filter was relaxed and
-        # these are nearest matches rather than valid answers. Say so loudly —
-        # presenting them as if they matched would be worse than refusing.
+        # these are nearest matches rather than valid answers. The correct
+        # response depends on WHICH constraint failed: an unmatched course means
+        # the data cannot answer at all and the system must refuse; an unmatched
+        # budget or cutoff means near-misses are useful if the gap is named.
         relaxed = getattr(self.retriever, "last_retrieval_relaxed", False)
+        filters = self.retriever.last_filters
+
         if relaxed:
             constraints = self.retriever.describe_filters()
-            notes.append(
+            note = (
                 "⚠️ NO EXACT MATCH: No college in the dataset satisfies all of "
                 f"these constraints together — {constraints}. The records below are "
                 "the closest available, NOT valid answers.\n"
-                "You MUST: (1) state plainly that nothing matches every requirement, "
-                "(2) name which specific constraint(s) cannot be met, (3) then offer "
-                "the closest alternatives and say exactly how each falls short. "
-                "Do NOT present these as if they satisfied the student's criteria."
             )
+            if filters.get("courses"):
+                note += (
+                    "The unmet constraint includes a COURSE. If no college in the "
+                    "records below actually offers the course the student asked for, "
+                    "the correct response is a refusal: set answered=false and state "
+                    "plainly that the course is not in the data. Do NOT list "
+                    "near-miss colleges as though they answered the question.\n"
+                )
+            note += (
+                "If the unmet constraint is numeric (budget, cutoff), you may present "
+                "the closest options — but state explicitly which requirement each one "
+                "fails and by how much."
+            )
+            notes.append(note)
 
         # --- Pre-computed budget / eligibility verdicts ---
-        filters = self.retriever.last_filters
-        if not relaxed and (filters.get("max_fees_per_year") or filters.get("min_score")):
+        # Always injected when a numeric constraint exists, relaxed or not.
+        if filters.get("max_fees_per_year") or filters.get("min_score"):
             verdict_lines = ["⚠️ PRE-COMPUTED FILTER RESULTS (trust these, do NOT re-compare):"]
             for doc in docs:
                 row = doc["row"]
@@ -83,7 +109,9 @@ class RAGPipeline:
             notes.append("\n".join(verdict_lines))
 
         # --- Pre-computed rankings for subjective / comparison queries ---
-        if analysis["is_subjective"] and len(docs) > 1 and not relaxed:
+        # Also always injected. This block is what excludes placement-zero
+        # colleges from the placement ranking and labels them correctly.
+        if analysis["is_subjective"] and len(docs) > 1:
             notes.append(self._build_rankings(docs))
 
         if analysis["has_unit_ambiguity"]:
@@ -109,6 +137,42 @@ class RAGPipeline:
         # Stage 3: Generate grounded answer
         result = generate_answer(augmented_query, docs, measure_cost=measure_cost)
 
+        # Stage 4: Deterministic correction of the `answered` flag.
+        # Asked for a course no college offers, the model writes a correct
+        # refusal — "No college offers B.Sc Agriculture, however C007 offers
+        # B.Sc in other science streams" — and then sets answered=true, because
+        # it produced text it judges useful. That judgement is about the
+        # response; the flag is about the question. Decided here instead.
+        result = self._correct_answered_flag(result, docs, filters, relaxed)
+
+        return result
+
+    def _correct_answered_flag(self, result: dict, docs: list[dict],
+                               filters: dict, relaxed: bool) -> dict:
+        """
+        Override `answered` to False when the requested course is absent
+        from every retrieved record.
+
+        Only fires when retrieval was relaxed AND a course filter was set —
+        i.e. the structured filter already established that nothing matched.
+        Narrow by design: this must never flip a legitimate answer to False.
+        """
+        if not (relaxed and filters.get("courses")):
+            return result
+
+        offered_anywhere = any(
+            any(course in doc["row"]["courses_offered"].lower()
+                for course in filters["courses"])
+            for doc in docs
+        )
+
+        if not offered_anywhere:
+            result["answered"] = False
+            if not result.get("reason_if_unanswered"):
+                result["reason_if_unanswered"] = (
+                    "Requested course is not offered by any college in the dataset"
+                )
+
         return result
 
     def _build_rankings(self, docs: list[dict]) -> str:
@@ -117,7 +181,9 @@ class RAGPipeline:
 
         The LLM receives finished ordered lists and is told not to re-order.
         This eliminates the class of error where an LLM writes an ordering
-        that contradicts the numbers it just quoted.
+        that contradicts the numbers it just quoted — and it is also what
+        keeps `avg_placement_lpa = 0` out of the placement ranking, since a
+        college that reports nothing is not the worst performer.
         """
         lines = ["📊 PRE-COMPUTED RANKINGS (already sorted — reproduce as-is, do NOT re-order):"]
 

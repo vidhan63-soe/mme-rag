@@ -1,0 +1,16 @@
+{
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "cost_per_1m_input_usd": 0.59,
+  "cost_per_1m_output_usd": 0.79,
+  "sample_size": 7,
+  "avg_input_tokens_per_query": 1807,
+  "avg_output_tokens_per_query": 96,
+  "avg_latency_seconds": 11.291,
+  "cost_per_1000_queries_usd": 1.1429,
+  "cost_per_1000_queries_inr": 97.14,
+  "one_time_embedding_cost_usd": 0.0,
+  "one_time_embedding_time_seconds": 6.03,
+  "embedding_model": "all-MiniLM-L6-v2 (local, free)",
+  "notes": "Embedding uses a local sentence-transformers model \u2014 zero API cost. Embedding 15 colleges took 6.03s. At 50K queries/month the LLM API cost is the dominant factor."
+}

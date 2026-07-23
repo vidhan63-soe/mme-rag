@@ -28,7 +28,7 @@ def get_provider():
 # Model configs per provider
 MODELS = {
     "groq": {
-        "model": "llama-3.1-8b-instant",
+        "model": "llama-3.3-70b-versatile",
         "cost_per_1m_input": 0.59,   # USD
         "cost_per_1m_output": 0.79,  # USD
     },

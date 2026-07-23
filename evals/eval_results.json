@@ -9,10 +9,10 @@
       "query": "Which college has the worst placement record?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "Nainital Institute of Medical Sciences (C006) does not report a placement package as its graduates proceed to internships and postgraduate examinations rather than campus recruitment. Thus, it cannot ",
+      "system_answer": "Based on the pre-computed rankings, the college with the worst placement record is Kumaon Arts and Science College (C007) with an average placement package of ₹2.8 LPA, according to the placement reco",
       "system_citations": [
-        "C006",
-        "C007"
+        "C007",
+        "C006"
       ],
       "system_answered": true
     },
@@ -20,11 +20,13 @@
       "id": "eval_02",
       "name": "Refusal — course not in data",
       "query": "Which colleges offer a B.Sc in Agriculture?",
-      "passed": true,
-      "reason": "OK",
-      "system_answer": "I don't know. None of the colleges in the provided data offer a B.Sc in Agriculture.",
-      "system_citations": [],
-      "system_answered": false
+      "passed": false,
+      "reason": "answered=True, expected False; Should have set answered=false for a question the data can't answer",
+      "system_answer": "No college in the provided dataset offers a B.Sc in Agriculture. However, Kumaon Arts and Science College (C007) offers B.Sc in various other subjects.",
+      "system_citations": [
+        "C007"
+      ],
+      "system_answered": true
     },
     {
       "id": "eval_03",
@@ -32,7 +34,7 @@
       "query": "I can afford ₹60,000 per semester. Which colleges fit my budget?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "Given your semester budget of ₹60,000, your annual budget would be ₹60,000 * 2 = ₹120,000. Based on the pre-computed filter results, all the colleges (C007, C012, C002, C014, C009, C013, C011, C005) f",
+      "system_answer": "Based on your budget of ₹60,000 per semester, which is ₹120,000 per academic year, the following colleges fit your budget: Kumaon Arts and Science College (C007), Ambedkar National Institute (C012), G",
       "system_citations": [
         "C007",
         "C012",
@@ -51,12 +53,11 @@
       "query": "List all engineering degree colleges.",
       "passed": true,
       "reason": "OK",
-      "system_answer": "The engineering degree colleges are Himalayan College of Engineering [C003], Terai Technical University [C009], North Ridge Institute of Technology [C001], and Ambedkar National Institute [C012].",
+      "system_answer": "Engineering degree colleges in the dataset are Himalayan College of Engineering [C003], North Ridge Institute of Technology [C001], and Terai Technical University [C009].",
       "system_citations": [
         "C003",
-        "C009",
         "C001",
-        "C012"
+        "C009"
       ],
       "system_answered": true
     },
@@ -66,7 +67,7 @@
       "query": "What courses does Ganga Valley University offer?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "Ganga Valley University (C002) offers BBA, B.Com, BCA, and MBA courses.",
+      "system_answer": "Ganga Valley University offers BBA, B.Com, BCA, and MBA courses.",
       "system_citations": [
         "C002"
       ],
@@ -78,7 +79,7 @@
       "query": "I scored 55% in 12th. Can I get into Ambedkar National Institute?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "You are not eligible for Ambedkar National Institute (C012) because your score of 55% is below the cutoff of 88%.",
+      "system_answer": "Unfortunately, you are not eligible for Ambedkar National Institute due to the cutoff of 88% being higher than your score of 55%.",
       "system_citations": [
         "C012"
       ],
@@ -90,7 +91,7 @@
       "query": "What's the total cost of studying at Rishikesh Institute of Design?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "The annual tuition fee at Rishikesh Institute of Design (C008) is ₹210,000. However, additional costs for studio, material, and printing charges are billed separately and can add ₹30,000 to ₹40,000 pe",
+      "system_answer": "The total cost of studying at Rishikesh Institute of Design is ₹210,000 per academic year for tuition fees. Additionally, studio, material, and printing charges are billed separately and typically add",
       "system_citations": [
         "C008"
       ],
@@ -102,7 +103,7 @@
       "query": "Are there any government colleges without hostel facilities?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "Yes, there are government colleges without hostel facilities. For example, Shivalik Government Polytechnic (C005) and Haldwani Law College (C011) do not have hostels. Students of Shivalik Government P",
+      "system_answer": "Yes, both Shivalik Government Polytechnic (C005) and Haldwani Law College (C011) do not have hostel facilities on campus.",
       "system_citations": [
         "C005",
         "C011"
@@ -113,26 +114,22 @@
       "id": "eval_09",
       "name": "Refusal — field not in data",
       "query": "What is the student-to-faculty ratio at Doon Business School?",
-      "passed": false,
-      "reason": "answered=False, expected True",
-      "system_answer": "I don't know the student-to-faculty ratio at Doon Business School [C004].",
-      "system_citations": [
-        "C004"
-      ],
+      "passed": true,
+      "reason": "OK",
+      "system_answer": "Unfortunately, the provided college records do not mention the student-to-faculty ratio at Doon Business School.",
+      "system_citations": [],
       "system_answered": false
     },
     {
       "id": "eval_10",
-      "name": "Lakh notation with no unit specified",
+      "name": "Total-course-cost unit conversion",
       "query": "My total budget for a 4-year B.Tech is 5 lakhs. What are my options?",
       "passed": true,
       "reason": "OK",
-      "system_answer": "Given your total budget for a 4-year B.Tech is 5 lakhs, all the colleges (C001, C003, C009, C012) are within your budget. However, it's essential to consider other factors such as cutoff percentages, ",
+      "system_answer": "Based on your budget of ₹5,00,000 for 4 years, your annual budget is ₹1,25,000. Both Ambedkar National Institute (C012) and Terai Technical University (C009) are within your budget, with annual tuitio",
       "system_citations": [
-        "C001",
-        "C003",
-        "C009",
-        "C012"
+        "C012",
+        "C009"
       ],
       "system_answered": true
     }
