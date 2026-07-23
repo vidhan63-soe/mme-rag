@@ -15,6 +15,9 @@ Strategy
     • If structured filters matched specific colleges → use those, ranked by
       semantic similarity.
     • If no structured filters fired → return top-K by semantic similarity.
+    • If filters over-constrained to ZERO results → fall back to semantic-only
+      and set `last_retrieval_relaxed`, so the caller can tell the model that
+      no record satisfies every constraint.
     • A college named explicitly in the query is always included, even if other
       filters would exclude it — the LLM needs its record to answer "no".
 
@@ -26,6 +29,13 @@ Why not just semantic search?
 Why not just structured filtering?
     "Which colleges offer scholarships for low-income families?" has zero
     structured fields.  The answer lives in free text.
+
+Why the empty-set fallback matters
+    "I got 90% in Arts, which B.Tech is good for me?" intersects a course
+    filter with a score filter and returns nothing.  Reporting "no records
+    found" is technically true and practically useless — the student needs to
+    hear *why* nothing matched.  Falling back to semantic retrieval gives the
+    model something concrete to explain the gap with.
 
 Known limitation
 ----------------
@@ -49,6 +59,9 @@ class HybridRetriever:
         # Pre-compute embeddings for all college documents
         texts = [d["document"] for d in self.docs]
         self.doc_embeddings = self.model.encode(texts, normalize_embeddings=True)
+        # Set by retrieve() when structured filters had to be relaxed
+        self.last_retrieval_relaxed = False
+        self.last_filters = {}
 
     def retrieve(self, query: str, top_k: int = 5) -> list[dict]:
         """
@@ -56,9 +69,15 @@ class HybridRetriever:
 
         Each result is a dict with keys:
             college_id, name, document, row, similarity_score
+
+        Side effects: sets `last_retrieval_relaxed` and `last_filters`, which
+        pipeline.py reads to decide what to tell the model.
         """
         # --- Stage 1: structured filtering ---
         filters = self._extract_filters(query)
+        self.last_filters = filters
+        self.last_retrieval_relaxed = False
+
         mask = np.ones(len(self.df), dtype=bool)
 
         if filters.get("max_fees_per_year"):
@@ -110,7 +129,17 @@ class HybridRetriever:
         # --- Stage 3: combine ---
         structured_hit = mask.sum() < len(self.df)  # filters actually narrowed results
 
-        if structured_hit:
+        if structured_hit and mask.sum() == 0 and not named_indices:
+            # Filters over-constrained to nothing.  Returning an empty list makes
+            # the model say "no records found", which is true but unhelpful — the
+            # student learns nothing about WHY nothing matched.  Fall back to
+            # semantic retrieval and flag it so pipeline.py can tell the model to
+            # name the unmet constraints explicitly.
+            self.last_retrieval_relaxed = True
+            ranked = np.argsort(-similarities)[:top_k]
+            candidates = [(idx, similarities[idx]) for idx in ranked]
+
+        elif structured_hit:
             # Use filtered set, ranked by similarity
             candidates = []
             for idx in range(len(self.docs)):
@@ -123,6 +152,7 @@ class HybridRetriever:
                     candidates.append((idx, similarities[idx]))
             candidates.sort(key=lambda x: x[1], reverse=True)
             candidates = candidates[:top_k]
+
         else:
             # Pure semantic — return top_k by similarity
             ranked = np.argsort(-similarities)[:top_k]
@@ -139,6 +169,29 @@ class HybridRetriever:
     def get_all_colleges(self) -> list[dict]:
         """Return all college docs (for queries needing full scan)."""
         return self.docs
+
+    def describe_filters(self, filters: dict = None) -> str:
+        """
+        Human-readable summary of the constraints that were applied.
+
+        Used when retrieval was relaxed, so the model can name exactly which
+        constraints no college satisfied.
+        """
+        f = filters if filters is not None else self.last_filters
+        parts = []
+        if f.get("max_fees_per_year"):
+            parts.append(f"annual fee at or below ₹{f['max_fees_per_year']:,}")
+        if f.get("min_score"):
+            parts.append(f"cutoff at or below {f['min_score']}%")
+        if f.get("courses"):
+            parts.append(f"offers one of: {', '.join(sorted(f['courses']))}")
+        if f.get("college_type"):
+            parts.append(f"type is {f['college_type'].title()}")
+        if "hostel_required" in f:
+            parts.append("has a hostel" if f["hostel_required"] else "has no hostel")
+        if f.get("college_name"):
+            parts.append(f"name matches '{f['college_name']}'")
+        return "; ".join(parts) if parts else "no structured constraints"
 
     def _extract_filters(self, query: str) -> dict:
         """

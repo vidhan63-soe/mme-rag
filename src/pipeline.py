@@ -2,8 +2,8 @@
 Main RAG pipeline: query analysis → retrieval → generation.
 
 Orchestrates the three stages and handles edge cases like
-unit ambiguity and subjective queries by injecting guidance
-into the LLM context.
+unit ambiguity, subjective queries, and over-constrained retrieval
+by injecting guidance into the LLM context.
 
 Design note on pre-computation
 ------------------------------
@@ -44,9 +44,26 @@ class RAGPipeline:
         augmented_query = query
         notes = []
 
+        # --- Over-constrained retrieval ---
+        # No college satisfied every constraint, so the filter was relaxed and
+        # these are nearest matches rather than valid answers. Say so loudly —
+        # presenting them as if they matched would be worse than refusing.
+        relaxed = getattr(self.retriever, "last_retrieval_relaxed", False)
+        if relaxed:
+            constraints = self.retriever.describe_filters()
+            notes.append(
+                "⚠️ NO EXACT MATCH: No college in the dataset satisfies all of "
+                f"these constraints together — {constraints}. The records below are "
+                "the closest available, NOT valid answers.\n"
+                "You MUST: (1) state plainly that nothing matches every requirement, "
+                "(2) name which specific constraint(s) cannot be met, (3) then offer "
+                "the closest alternatives and say exactly how each falls short. "
+                "Do NOT present these as if they satisfied the student's criteria."
+            )
+
         # --- Pre-computed budget / eligibility verdicts ---
-        filters = self.retriever._extract_filters(query)
-        if filters.get("max_fees_per_year") or filters.get("min_score"):
+        filters = self.retriever.last_filters
+        if not relaxed and (filters.get("max_fees_per_year") or filters.get("min_score")):
             verdict_lines = ["⚠️ PRE-COMPUTED FILTER RESULTS (trust these, do NOT re-compare):"]
             for doc in docs:
                 row = doc["row"]
@@ -66,7 +83,7 @@ class RAGPipeline:
             notes.append("\n".join(verdict_lines))
 
         # --- Pre-computed rankings for subjective / comparison queries ---
-        if analysis["is_subjective"] and len(docs) > 1:
+        if analysis["is_subjective"] and len(docs) > 1 and not relaxed:
             notes.append(self._build_rankings(docs))
 
         if analysis["has_unit_ambiguity"]:
