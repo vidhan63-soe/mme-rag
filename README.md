@@ -1,4 +1,4 @@
-# MME RAG Prototype — Make My Education AI Counsellor
+# MME RAG Prototype - Make My Education AI Counsellor
 
 A grounded, citation-backed RAG system that answers student questions about colleges using only verified data. Built for the Applied AI Engineer take-home assignment.
 
@@ -41,7 +41,7 @@ Early in development the system produced two answers that were confidently wrong
 
 Retrieval was correct in both cases. The right colleges were fetched with the right numbers attached. The LLM then compared those numbers in prose and got the comparison backwards.
 
-In admissions, a wrong fee destroys trust. Prompting harder is not a fix — it lowers the failure rate without removing the failure mode. **So the system no longer asks the LLM to do arithmetic.**
+In admissions, a wrong fee destroys trust. Prompting harder is not a fix - it lowers the failure rate without removing the failure mode. **So the system no longer asks the LLM to do arithmetic.**
 
 Every numeric comparison and every ordering is computed in Python and injected into the prompt as a finished verdict:
 
@@ -50,7 +50,7 @@ Every numeric comparison and every ordering is computed in Python and injected i
   C003: Fee ₹132,000 vs budget ₹150,000 → ✅ WITHIN BUDGET | Cutoff 75% vs score 78% → ✅ ELIGIBLE
   C009: Fee ₹118,000 vs budget ₹150,000 → ✅ WITHIN BUDGET | Cutoff 70% vs score 78% → ✅ ELIGIBLE
 
-📊 PRE-COMPUTED RANKINGS (already sorted — reproduce as-is, do NOT re-order):
+📊 PRE-COMPUTED RANKINGS (already sorted - reproduce as-is, do NOT re-order):
   By annual fee, lowest to highest: C007 (₹15,000) < C012 (₹45,000) < C014 (₹72,000)
   By average placement, highest to lowest: C012 (₹8.4 LPA) > C004 (₹7.1 LPA)
   Placement not reported (excluded from ranking, NOT 'worst'): C006
@@ -70,9 +70,9 @@ query
 query_analyzer.py    classify: listing / lookup / semantic
                      flag: unit ambiguity, subjectivity, needs about-field
   ↓
-retriever.py         Stage 1 — structured filters (exact, on DataFrame)
-                     Stage 2 — semantic similarity (local embeddings)
-                     Stage 3 — combine: filters decide who, similarity decides order
+retriever.py         Stage 1 - structured filters (exact, on DataFrame)
+                     Stage 2 - semantic similarity (local embeddings)
+                     Stage 3 - combine: filters decide who, similarity decides order
   ↓
 pipeline.py          pre-compute verdicts and rankings in Python
                      inject as authoritative notes
@@ -82,7 +82,7 @@ generator.py         LLM call, strict JSON out, citations required
 
 ### Hybrid retrieval, and why not pure vector search
 
-**Structured filtering** extracts hard constraints via rules — budget, cutoff score, course, college type, hostel, named college — and applies them as exact masks on the DataFrame.
+**Structured filtering** extracts hard constraints via rules - budget, cutoff score, course, college type, hostel, named college - and applies them as exact masks on the DataFrame.
 
 Cosine similarity has no concept of `≤`. A ₹8.5 lakh college embeds close to "budget ₹1.5 lakh" because both contain "lakh". Filtering is exact; similarity is not.
 
@@ -90,11 +90,11 @@ Cosine similarity has no concept of `≤`. A ₹8.5 lakh college embeds close to
 
 Questions like *"which colleges offer scholarships for low-income families?"* have zero structured fields to filter on. The answer lives entirely in free text.
 
-**Combination.** If filters narrowed the set, that set is used and similarity only orders it. If no filter fired, top-K by similarity. A college named explicitly in the query is always included even when other filters exclude it — *"Does Ganga Valley University offer a PhD?"* needs C002's record present for the model to answer "no."
+**Combination.** If filters narrowed the set, that set is used and similarity only orders it. If no filter fired, top-K by similarity. A college named explicitly in the query is always included even when other filters exclude it - *"Does Ganga Valley University offer a PhD?"* needs C002's record present for the model to answer "no."
 
 ### Negation handling
 
-`"colleges with a hostel"` and `"colleges without a hostel"` both contain the token `hostel`. Treating them identically returns the exact opposite set — and the model, seeing only colleges that *do* have hostels, confidently reports that none lack one. This was caught by eval_08 and fixed by detecting negation words near the token.
+`"colleges with a hostel"` and `"colleges without a hostel"` both contain the token `hostel`. Treating them identically returns the exact opposite set - and the model, seeing only colleges that *do* have hostels, confidently reports that none lack one. This was caught by eval_08 and fixed by detecting negation words near the token.
 
 The tri-state matters: `hostel_required` can be `True`, `False`, or absent, and `.get()` collapses `False` into absent. Membership is tested with `in`, not `.get()`.
 
@@ -110,17 +110,17 @@ The tri-state matters: `hostel_required` can be `True`, `False`, or absent, and 
 
 ### Vector store: deliberately not used
 
-At 15 records, semantic search is one matrix multiply over a `(15, 384)` array — microseconds. ChromaDB or FAISS would add a dependency, a persistence layer, and an initialisation step to return the identical top-K. An ANN index is a solution to a scan cost that does not exist here.
+At 15 records, semantic search is one matrix multiply over a `(15, 384)` array - microseconds. ChromaDB or FAISS would add a dependency, a persistence layer, and an initialisation step to return the identical top-K. An ANN index solves a scan cost that does not exist at this scale.
 
-At roughly 1,000+ colleges this reverses: sub-linear search starts to pay, and persistence removes the cold-start re-embedding cost. The swap is contained — `_extract_filters`, the verdict injection, and the prompt are all unaffected.
+I have run ChromaDB in production on a knowledge base several orders of magnitude larger (see Part B), which is part of why I am comfortable saying it is the wrong tool here. Past roughly 1,000 colleges the calculation reverses: sub-linear search starts to pay, and persistence removes the cold-start re-embedding cost. The swap is contained - `_extract_filters`, the verdict injection, and the prompt are all unaffected by it.
 
 ### Techniques considered and rejected
 
-**Reciprocal Rank Fusion.** RRF merges ranked lists from multiple retrievers, typically BM25 and dense embeddings. There is one ranker here; fusing a list with itself is the identity operation. Adding BM25 to make RRF meaningful would fuse two rankers that, on 15 documents already narrowed to 2–5 candidates by structured filtering, agree on essentially everything. Worth adding once a second retriever earns its place — call it 500+ records.
+**Reciprocal Rank Fusion.** RRF merges ranked lists from multiple retrievers, typically BM25 and dense embeddings. There is one ranker here; fusing a list with itself is the identity operation. Adding BM25 to make RRF meaningful would fuse two rankers that, on 15 documents already narrowed to 2–5 candidates by structured filtering, agree on essentially everything. Worth adding once a second retriever earns its place - call it 500+ records.
 
-**Query expansion.** Rewriting a query into paraphrases costs an extra LLM call, roughly doubling latency and per-query cost, on a system where the structured filter already extracted the constraint exactly. It also introduces terms the student did not say — and on a dataset containing both *Ganga Valley University* (C002) and *Ganga Institute of Commerce* (C014), a paraphrase that drops the distinguishing word is precisely how those two get confused. Expansion earns its cost when students use vocabulary the data lacks; that is a content problem, not a scale one.
+**Query expansion.** Rewriting a query into paraphrases costs an extra LLM call, roughly doubling latency and per-query cost, on a system where the structured filter already extracted the constraint exactly. It also introduces terms the student did not say - and on a dataset containing both *Ganga Valley University* (C002) and *Ganga Institute of Commerce* (C014), a paraphrase that drops the distinguishing word is precisely how those two get confused. Expansion earns its cost when students use vocabulary the data lacks; that is a content problem, not a scale one.
 
-**Mean Reciprocal Rank** is a metric rather than a technique and is worth computing — the eval cases already declare `required_citations`, so MRR over them is a small addition. Not yet implemented; noted as next step.
+**Mean Reciprocal Rank** is a metric rather than a technique, and it is worth computing - the eval cases already declare `required_citations`, so MRR over them is a small addition. Not yet implemented; noted as a next step.
 
 ---
 
@@ -133,17 +133,17 @@ Ten cases, each targeting a specific trap in the data dictionary rather than a h
 | ID | Tests | Result |
 |---|---|---|
 | eval_01 | `placement = 0` is "not reported", not "worst" | ✅ |
-| eval_02 | Refusal — course absent from dataset | ✅ |
+| eval_02 | Refusal - course absent from dataset | ✅ |
 | eval_03 | Semester → annual fee conversion | ✅ |
 | eval_04 | Diploma is not a degree (C005 exclusion) | ✅ |
 | eval_05 | Similar-name disambiguation (C002 vs C014) | ✅ |
 | eval_06 | Cutoff as a hard floor, no hedging | ✅ |
 | eval_07 | Costs beyond tuition, from the `about` field | ✅ |
-| eval_08 | Negated constraint — government *without* hostel | ✅ (was failing) |
-| eval_09 | Field absent from schema | ❌ *(test corrected — see below)* |
+| eval_08 | Negated constraint - government *without* hostel | ✅ (was failing) |
+| eval_09 | Field absent from schema | ❌ *(test corrected - see below)* |
 | eval_10 | Total-course-cost → per-year conversion | ✅ |
 
-**eval_08** was a genuine retrieval bug. The query *"government colleges without hostel facilities"* returned C007 and C012 — the colleges that *do* have hostels — and the system reported that none lacked one. False, and confidently so. Fixed by negation detection; now correctly returns C005 and C011.
+**eval_08 was a genuine retrieval bug.** The query *"government colleges without hostel facilities"* returned C007 and C012 - the colleges that *do* have hostels - and the system reported that none lacked one. False, and confidently so. Fixed by negation detection; now correctly returns C005 and C011.
 
 **eval_09 is a case where my test was wrong and the system was right.** I asked for a student-to-faculty ratio, which does not exist in the schema, and wrote the expectation as `answered: true` on the assumption that a partial answer from the `about` field would be acceptable. The system refused instead and set `answered: false`. That is the better judgment: a ratio is a specific numeric claim, and the `about` field offers only a rough faculty count for a different college. Answering partially would invite the student to infer a number that was never in the data. The test expectation has been corrected to match, and the reasoning is recorded here rather than quietly edited away.
 
@@ -151,39 +151,50 @@ I have deliberately not pushed this to 10/10. A suite where everything passes is
 
 ---
 
-## Part B — Proof You've Shipped
+## Part B - Proof You've Shipped
 
-> **TO BE COMPLETED BY VIDHAN — do not submit with this placeholder.**
->
-> Answer their four questions directly:
-> - What the feature did, and roughly who and how many used it
-> - What *you personally* built, as distinct from what the team shipped
-> - What broke or surprised you in production, and what you changed in response
-> - What it cost to run, and anything you did to bring that down
->
-> Be specific enough to survive a follow-up question — a concrete incident beats a general claim. If you have not shipped an LLM feature to external users at scale, say so plainly and describe the nearest real thing you have built. They said they are hiring a builder and that they read every submission themselves; a candidate who is straight about a gap reads better than one whose story collapses on the first probe.
+### Multi-Agent RAG for R&D Knowledge Retrieval - BioGenex
+
+**What it did, and who used it.** An internal RAG assistant for BioGenex's R&D department, deployed on GCP. Researchers queried it against company documentation - antibody and probe specifications, protocols, and a wider enterprise knowledge base - to pull precise technical details during experiments instead of searching PDFs by hand. The users were the R&D team internally; this was never a customer-facing product.
+
+**On evidence.** The system was built inside the company, and both the source and the underlying documents are confidential, so I cannot share a repository or a link. What I can do is describe the architecture and the production failures in as much detail as you want, and answer questions on either.
+
+**What I personally built.** I wrote the retrieval pipeline end to end: Sentence-Transformers for embeddings, ChromaDB as the vector store, and LangChain agent orchestration over GPT-4 for context-aware retrieval. I implemented the multi-agent workflow - separate retrieval, web search, and verification agents using ReAct and function calling - along with the source-grounding and confidence-scoring layer on top. I also built the service around it: FastAPI with async processing, Redis caching for repeated queries, and PostgreSQL for conversation history. On a related project for the same team I integrated a voice layer using Edge TTS and local models via Ollama, giving verbal status updates during instrument runs.
+
+**What broke in production.** Two things, and the second one caught me out.
+
+The first was retrieval quality. Measured against what the R&D team judged a query *should* have returned, MRR was well below what the demo suggested. Chunks that looked plausible in isolation were the wrong chunks for the question actually asked. This is a familiar failure once you have seen it, but it does not surface until domain experts bring real questions - my own spot checks had all passed.
+
+The second was cold-start latency. In chat and research use a single question could trigger several agent hops, each with its own retrieval and LLM call. Steady-state performance was fine, but the first request after a cold start took long enough to exceed the request timeout and fail outright. Warm caches and an already-running service had hidden this throughout testing, which is exactly why it only appeared in production. The fix worked on two fronts: cutting the number of sequential agent hops on the common path, and caching hard enough that the expensive path ran rarely rather than routinely.
+
+That experience is the direct reason this prototype does as much work as it can outside the model. Every extra LLM call is another opportunity to be slow and another opportunity to be wrong.
+
+**What it cost to run.** Little, in direct terms. Embeddings ran on local Sentence-Transformers models and parts of the stack used open-source models through Ollama, so recurring spend was essentially GCP hosting rather than per-token API cost - the same reasoning behind the local embedding model here. The genuinely expensive component was GPT-4 inside the multi-agent loop, so reducing hops per query was as much a cost decision as a latency one.
+
+### Related work
+
+- **AI Pre-Screening Recruitment Agent with Live Voice Interview** - a full-stack product pairing a ChromaDB RAG pipeline for resume-to-JD ranking with a WebRTC voice interview agent (Whisper for STT, ElevenLabs/Bark for TTS), plus a hybrid scoring engine blending cosine retrieval with LLM evaluation. Code available on request.
+- **LincolnAI (Aug 2024 – Jun 2025)** - a RAG agent for contract drafting and legal document review built on LangChain, GPT-4, and FAISS over a policy-document knowledge base, served through FastAPI.
 
 ---
 
-## Part C — Written Reflection
-
-> **Read these before submitting and rewrite anything you would not say out loud in your own words.** They are defensible positions, but they should be yours.
+## Part C - Written Reflection
 
 **Keeping per-query cost low as usage grows.**
-Three levers in order of impact. First, semantic caching — hash the query embedding and serve a cached answer when a sufficiently similar query was handled recently. College data changes slowly and student questions cluster hard around a few dozen patterns, so this should absorb a large fraction of traffic before it reaches the model. Second, tiered routing: the query analyzer already classifies complexity, so simple lookups ("fees at X") can go to a small model while genuinely comparative questions get a larger one. Third, precompute the most common questions on a schedule and serve them from cache entirely.
+Three levers, in order of impact. First, semantic caching - hash the query embedding and serve a cached answer when a sufficiently similar query was handled recently. College data changes slowly and student questions cluster hard around a few dozen patterns, so caching should absorb a large share of traffic before it reaches the model; this was also the lever that mattered most at BioGenex. Second, tiered routing: the query analyzer already classifies complexity, so simple lookups ("fees at X") can go to a small model while genuinely comparative questions get a larger one. Third, keep it to one LLM call per query wherever possible - multi-agent loops multiply cost and latency together, and most student questions do not need them.
 
 **Never stating a wrong fee or cutoff.**
-The system must never *generate* a number — only copy one. This prototype takes the first step by removing arithmetic from the LLM's job: comparisons and rankings are computed in Python and injected as verdicts. The next step is a post-generation validator that extracts every ₹ amount and percentage from the response and blocks it unless each appears in the retrieved source records. Structured fields should also be injected as structured data rather than embedded prose, so there is no parsing layer between the database and the claim. Unit labels ("per year") should be enforced by the validator, not left to the model's discretion.
+The system must never *generate* a number, only copy one. This prototype takes the first step by removing arithmetic from the LLM's job: comparisons and rankings are computed in Python and injected as verdicts. The next step is a post-generation validator that extracts every ₹ amount and percentage from the response and blocks it unless each appears in the retrieved records. Structured fields should be injected as structured data rather than embedded prose, so there is no parsing layer between the database and the claim. Unit labels ("per year") should be enforced by the validator, not left to the model's discretion.
 
 **What I would build first.**
-The unit and ambiguity layer, before improving retrieval. Students speak in per-semester fees, total course cost, lakhs, and percentages interchangeably, and silently answering a per-semester question with a per-year figure is a trust failure no amount of retrieval quality compensates for. A normaliser that detects ambiguity, asks when it is genuinely unresolvable, and shows its conversion when it resolves it, is the foundation everything else sits on.
+The unit and ambiguity layer, before touching retrieval. Students speak in per-semester fees, total course cost, lakhs, and percentages interchangeably, and silently answering a per-semester question with a per-year figure is a trust failure that no amount of retrieval quality compensates for. A normaliser that detects ambiguity, asks when it is genuinely unresolvable, and shows its conversion when it resolves it, is the foundation everything else sits on.
 
 **Measuring whether AI is actually helping.**
-Shortlist-or-apply completion rate for students who use the counsellor versus those who do not. A weekly human audit of sampled responses scored for factual correctness, tracked as an error rate over time. The refusal rate as a health signal — too high means the data is thin, too low means the system is guessing; somewhere in the 5–15% band is honest. Escalation rate to human counsellors, which should decline as the system improves. And one post-session question to the student: did this help you decide?
+Shortlist-or-apply completion rate for students who use the counsellor against those who do not. A weekly human audit of sampled responses scored for factual correctness, tracked as an error rate over time - at BioGenex the gap between demo-quality retrieval and what domain experts judged correct was large, and only human-scored sampling surfaced it. Refusal rate as a health signal: too high means the data is thin, too low means the system is guessing, and somewhere in the 5–15% band is honest. Escalation rate to human counsellors, which should fall as the system improves. And one question to the student after the session: did this help you decide?
 
 ---
 
-## Part D — Cost, With Numbers
+## Part D - Cost, With Numbers
 
 Measured across the 7 published questions via `run_all.py`. Reproduce with `python cost_report.py`.
 
@@ -197,44 +208,44 @@ Measured across the 7 published questions via `run_all.py`. Reproduce with `pyth
 | Cost per 1M output tokens | $0.79 |
 | Total cost, 7 queries | $0.0082 |
 | **Cost per 1,000 queries** | **~$1.18 (≈ ₹98)** |
-| One-time embedding cost | ₹0 — local model, ~2 s for 15 colleges |
+| One-time embedding cost | ₹0 - local model, ~2 s for 15 colleges |
 
-The 5.62 s average is skewed by two outliers (15.5 s and 13.4 s) on the two full-context questions; the median is closer to 0.9 s. Input tokens scale with how many colleges survive filtering — a targeted lookup runs ~1,000 tokens, a full-scan scholarship question ~4,255.
+The 5.62 s average is skewed by two outliers (15.5 s and 13.4 s) on the full-context questions; the median is closer to 0.9 s. Input tokens scale with how many colleges survive filtering - a targeted lookup runs around 1,000 tokens, a full-scan scholarship question around 4,255.
 
 ### At 50,000 queries/month, what breaks first?
 
-**Not cost.** ₹98 per 1,000 queries puts 50K/month at roughly ₹4,900 — negligible against the value of a counselling interaction.
+**Not cost.** ₹98 per 1,000 queries puts 50K/month at roughly ₹4,900 - negligible against the value of a counselling interaction.
 
-**Latency is the first real constraint,** and it bites before cost does. Groq's free tier capped this prototype at 100K tokens/day, which was hit during development. At ~1,800 input tokens per query, 50K queries is roughly 90M tokens/month — well past free-tier limits and into rate-limiting territory during peak hours, which in admissions means the weeks around results. First fix: semantic caching, which should cut model calls substantially given how tightly student questions cluster, plus routing simple lookups to a smaller model. Both reduce latency and cost together.
+**Latency is the first real constraint,** and it bites before cost does. Groq's free tier capped this prototype at 100K tokens/day, which I hit during development. At ~1,800 input tokens per query, 50K queries is roughly 90M tokens a month - well past free-tier limits and into rate-limiting during peak hours, which in admissions means the weeks around results. First fix is semantic caching, which should cut model calls substantially given how tightly student questions cluster, plus routing simple lookups to a smaller model. Both reduce latency and cost at once.
 
-**Accuracy is the risk that actually matters.** At 50K queries students will find every edge case — negations the filter misses, courses not in the data, Hindi and Hinglish phrasing, questions about hostel food and campus life that no structured field answers. The eval suite already caught one confident-wrong answer (eval_08) and one place where my own test was worse than the system's judgment (eval_09). Before optimising anything else I would expand that suite, add the numeric post-generation validator, and instrument the refusal rate in production as a live health signal.
+**Accuracy is the risk that actually matters.** At 50K queries students will find every edge case - negations the filter misses, courses absent from the data, Hindi and Hinglish phrasing, questions about hostel food and campus life that no structured field answers. The eval suite already caught one confident-wrong answer (eval_08) and one place where my own test was worse than the system's judgment (eval_09). Before optimising anything else I would expand that suite, add the numeric post-generation validator, and instrument the refusal rate in production as a live health signal.
 
 ---
 
 ## What I'd Do Differently With More Time
 
-1. **Post-generation numeric validator.** Extract every ₹ figure and percentage from the answer, verify each against the retrieved records, block on mismatch. Would have caught the original arithmetic failures automatically rather than by inspection.
+1. **Post-generation numeric validator.** Extract every ₹ figure and percentage from the answer, verify each against the retrieved records, block on mismatch. This would have caught the original arithmetic failures automatically rather than by inspection.
 
-2. **Multi-turn conversation.** Currently single-shot by design, matching the required interface. Real counselling is a conversation — "what about engineering?" then "which of those have hostels?" then "cheapest one?". The hard part is not history in the prompt but history-aware *query rewriting* before retrieval: "cheapest one?" must become "cheapest among C003 and C009" or the retriever fetches the wrong colleges entirely.
+2. **Multi-turn conversation.** Currently single-shot by design, matching the required interface. Real counselling is a conversation - "what about engineering?" then "which of those have hostels?" then "cheapest one?". The hard part is not history in the prompt but history-aware *query rewriting* before retrieval: "cheapest one?" has to become "cheapest among C003 and C009" or the retriever fetches the wrong colleges entirely.
 
-3. **General negation handling.** Currently hostel-only. Should extend to location, type, and course constraints.
+3. **General negation handling.** Currently hostel-only; should extend to location, type, and course constraints.
 
 4. **Hindi and Hinglish.** Most students in Uttarakhand would rather ask in Hindi. Detect, translate, retrieve, translate back.
 
-5. **SQLite for structured fields.** Replaces the pandas filter path with indexed SQL — faster, auditable, and the natural home for the structured half of the hybrid once the dataset grows.
+5. **SQLite for structured fields.** Replaces the pandas filter path with indexed SQL - faster, auditable, and the natural home for the structured half of the hybrid as the dataset grows.
 
-6. **MRR on the eval set,** to put a retrieval number next to the generation pass rate.
+6. **MRR on the eval set,** to put a retrieval number alongside the generation pass rate.
 
 ---
 
 ## Repository Structure
 
 ```
-├── answer.py              # CLI — single-shot JSON, plus --interactive REPL
+├── answer.py              # CLI - single-shot JSON, plus --interactive REPL
 ├── run_all.py             # Regenerates answers.md
 ├── cost_report.py         # Part D measurement
 ├── requirements.txt
-├── .env.example           # Template — copy to .env and add your key
+├── .env.example           # Template - copy to .env and add your key
 ├── README.md
 ├── answers.md             # Verbatim output, 7 published questions
 ├── sample_colleges.csv
